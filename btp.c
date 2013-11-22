@@ -1060,7 +1060,7 @@ static void btp_flush_data_server( btp_server_t* server TSRMLS_DC ) {
   request = emalloc(request_size + 1);
   btp_request_data(timers, request TSRMLS_CC);
 
-#ifdef DEBUG
+#ifdef DEBUG1
   request[request_size] = '\0';
   //php_error_docref(NULL TSRMLS_CC, E_NOTICE, "BTP: Request size: %zu\n Request data: %s", request_size, request);
   char *log_message = emalloc(request_size + 1000);
@@ -1196,6 +1196,42 @@ static PHP_FUNCTION( btp_dump )
   array_init(timer_list);
   zend_hash_apply_with_argument(&EG(regular_list), (apply_func_arg_t) btp_timer_dump_helper, (void *)timer_list TSRMLS_CC);
   add_assoc_zval(return_value, "timers", timer_list);
+}
+
+//proto bool btp_dump_timer(resource timer)
+static PHP_FUNCTION( btp_dump_timer )
+{
+  zval *timer;
+  btp_timer_t *t;
+
+  if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "r", &timer) != SUCCESS) {
+    RETURN_FALSE;
+  }
+
+  BTP_ZVAL_TO_TIMER(timer, t);
+
+  //попытка получить таймер, созданный когда btp был отключен
+  if( t->rsrc_id == dummy_timer->rsrc_id ) {
+    RETURN_FALSE;
+  }
+
+  array_init(return_value);
+  add_assoc_long(return_value, "server_id", BTP_G(servers)[t->server_index].id);
+  add_assoc_stringl(return_value, "server", t->server, t->server_len, 1);
+  add_assoc_stringl(return_value, "operation", t->operation, t->operation_len, 1);
+  add_assoc_stringl(return_value, "service", t->service, t->service_len, 1);
+  if( t->script_len ) {
+    add_assoc_stringl(return_value, "script", t->script, t->script_len, 1);
+  }
+  add_assoc_bool(return_value, "started", t->started);
+  add_assoc_bool(return_value, "deleted", t->deleted);
+  add_assoc_long(return_value, "start.sec", t->start.tv_sec);
+  add_assoc_long(return_value, "start.usec", t->start.tv_usec);
+
+  if( !t->started ) {
+    add_assoc_long(return_value, "len.sec", t->value.tv_sec);
+    add_assoc_long(return_value, "len.usec", t->value.tv_usec);
+  }
 }
 
 //proto bool btp_script_name_set(string script_name)
@@ -1477,6 +1513,7 @@ static PHP_FUNCTION( btp_timer_count_script ) {
 zend_function_entry btp_functions[] = {
   PHP_FE(btp_config_server_set, NULL)
   PHP_FE(btp_dump, NULL)
+  PHP_FE(btp_dump_timer, NULL)
   PHP_FE(btp_script_name_set, NULL)
   PHP_FE(btp_timer_start, NULL)
   PHP_FE(btp_timer_stop, NULL)
@@ -1549,18 +1586,16 @@ static PHP_MINIT_FUNCTION(btp)
 
 static PHP_MSHUTDOWN_FUNCTION(btp)
 {
-  int i;
-
   BTP_G(script_name_len) = 0;
   if( BTP_G(script_name) ) {
     efree(BTP_G(script_name));
     BTP_G(script_name) = 0;
   }
 
-  for(i = 0; i < BTP_G(servers_used); i++) {
-    btp_release_server(&BTP_G(servers)[i]);
+  while( BTP_G(servers_used) > 0 ) {
+    btp_release_server(&BTP_G(servers)[BTP_G(servers_used) - 1]);
+    BTP_G(servers_used)--;
   }
-  BTP_G(servers_used) = 0;
 
   return SUCCESS;
 }
