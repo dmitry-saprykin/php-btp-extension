@@ -1100,7 +1100,8 @@ static PHP_FUNCTION(btp_config_server_set)
 {
   char *host;
   char *port;
-  long server_id, host_len, port_len;
+  long server_id;
+  int host_len, port_len;
   server_id = 0;
   host_len = 0;
   port_len = 0;
