@@ -10,7 +10,15 @@ extern zend_module_entry btp_module_entry;
 #include "TSRM.h"
 #endif
 
-#define PHP_BTP_VERSION "0.0.1"
+#define PHP_BTP_VERSION "0.0.2"
+
+#define BTP_FORMAT_V1 0
+#define BTP_FORMAT_V2 1
+
+#define BTP_FORMAT_VMIN 0
+#define BTP_FORMAT_VMAX 1
+
+#define BTP_CONSTANT_FLAGS (CONST_CS | CONST_PERSISTENT)
 
 #define SERVER_HOST_MAXLEN 100
 #define SERVER_PORT_MAXLEN 10
@@ -28,6 +36,7 @@ typedef struct _btp_server_t {
   char port[ SERVER_PORT_MAXLEN + 1 ];
   unsigned short id;
   unsigned short stopped_count;
+  unsigned short format_id;
   struct sockaddr_storage sockaddr;
   size_t sockaddr_len;
 } btp_server_t;

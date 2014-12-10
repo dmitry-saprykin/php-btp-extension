@@ -69,3 +69,4 @@ var_dump($resource8);
 //var_dump(btp_timer_stop( $resource8 ));
 
 var_export( btp_dump() );
+var_export( btp_dump_timer($resource8) );

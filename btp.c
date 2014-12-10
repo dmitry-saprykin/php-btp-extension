@@ -63,6 +63,7 @@ typedef struct _btp_timer_t {
   } value;
 } btp_timer_t;
 
+
 static int le_btp_timer;
 static btp_timer_t* dummy_timer;
 
@@ -377,6 +378,21 @@ static int btp_timer_release_helper(zend_rsrc_list_entry *le TSRMLS_DC)
 }
  */
 
+/*
+{
+  "jsonrpc":"2.0",
+  "method": "multi_add",
+  "id": 1,
+  "params": {
+    "data": [
+      {"name": "a", "cl": [1,2,3,4,5,6,7,8,9,...]},
+      {"name": "b", "cl": [1,2,3,4,5,6,7,8,9,...]},
+      ...
+    ]
+  }
+}
+ */
+
 #define HASH_PREALLOC 10
 
 #define KEY_SERVICE "service~~"
@@ -389,6 +405,8 @@ static int btp_timer_release_helper(zend_rsrc_list_entry *le TSRMLS_DC)
 #define ITEM_CL "\",\"cl\":["
 #define ITEM_CLOSE "]}"
 #define COMMA ","
+
+#define OPENER_V2 "{\"jsonrpc\":\"2.0\",\"method\":\"multi_add\",\"params\":{\"data\":["
 
 //собирает и удаляет счетчики для одного сервера
 static int btp_timer_flush_helper(void *le TSRMLS_DC, int num_args, va_list args, zend_hash_key *hash_key )
@@ -521,7 +539,7 @@ static int btp_timer_flush_helper(void *le TSRMLS_DC, int num_args, va_list args
   return ZEND_HASH_APPLY_KEEP;
 }
 
-static size_t btp_request_size(HashTable *timers TSRMLS_DC ) {
+static size_t btp_request_size(HashTable *timers, unsigned short format_id TSRMLS_DC ) {
   HashPosition timers_pointer, timer_values_pointer;
   HashTable *timer_values;
   HashTable **temp;
@@ -534,7 +552,14 @@ static size_t btp_request_size(HashTable *timers TSRMLS_DC ) {
 
   size_t result = 0;
 
-  result += strlen(OPENER);
+  if(format_id == BTP_FORMAT_V2)
+  {
+    result += strlen(OPENER_V2);
+  }
+  else
+  {
+    result += strlen(OPENER);
+  }
 
   for(
     zend_hash_internal_pointer_reset_ex(timers, &timers_pointer);
@@ -563,7 +588,7 @@ static size_t btp_request_size(HashTable *timers TSRMLS_DC ) {
   return result;
 }
 
-static void btp_request_data(HashTable *timers, char *request TSRMLS_DC ) {
+static void btp_request_data(HashTable *timers, char *request, unsigned short format_id TSRMLS_DC ) {
   HashPosition timers_pointer, timer_values_pointer;
   HashTable *timer_values;
   HashTable **temp;
@@ -574,8 +599,16 @@ static void btp_request_data(HashTable *timers, char *request TSRMLS_DC ) {
   zend_ulong64 *timer;
   char *timer_str;
 
-  memcpy(request, OPENER, strlen(OPENER));
-  request += strlen(OPENER);
+  if (format_id == BTP_FORMAT_V2)
+  {
+    memcpy(request, OPENER_V2, strlen(OPENER_V2));
+    request += strlen(OPENER_V2);
+  }
+  else
+  {
+    memcpy(request, OPENER, strlen(OPENER));
+    request += strlen(OPENER);
+  }
 
   for(
     zend_hash_internal_pointer_reset_ex(timers, &timers_pointer);
@@ -742,7 +775,7 @@ static int btp_timer_flush_helper(void *le TSRMLS_DC, int num_args, va_list args
   return ZEND_HASH_APPLY_KEEP;
 }
 
-static size_t btp_request_size(HashTable *timers TSRMLS_DC ) {
+static size_t btp_request_size(HashTable *timers, unsigned short TSRMLS_DC ) {
   HashPosition timers_pointer, script_pointer, service_pointer, server_pointer, operation_pointer;
   HashTable **temp;
 
@@ -829,7 +862,7 @@ static size_t btp_request_size(HashTable *timers TSRMLS_DC ) {
   return result;
 }
 
-static void btp_request_data(HashTable *timers, char *request TSRMLS_DC ) {
+static void btp_request_data(HashTable *timers, char *request, unsigned short TSRMLS_DC ) {
   HashPosition timers_pointer, service_pointer, server_pointer, operation_pointer, script_pointer;
   HashTable **temp;
   btp_timer_t **data;
@@ -1056,9 +1089,9 @@ static void btp_flush_data_server( btp_server_t* server TSRMLS_DC ) {
   zend_hash_init(timers, server->stopped_count, NULL, NULL, 0);
   zend_hash_apply_with_arguments(&EG(regular_list), btp_timer_flush_helper, 2, timers, server );
 
-  request_size = btp_request_size(timers TSRMLS_CC);
+  request_size = btp_request_size(timers, server->format_id TSRMLS_CC);
   request = emalloc(request_size + 1);
-  btp_request_data(timers, request TSRMLS_CC);
+  btp_request_data(timers, request, server->format_id TSRMLS_CC);
 
 #ifdef DEBUG1
   request[request_size] = '\0';
@@ -1095,18 +1128,19 @@ static void btp_flush_data( int server_index TSRMLS_DC )
 
 //----------------------------Extension functions------------------------------------
 
-//proto bool btp_config_server_set(int id, string host, int port)
+//proto bool btp_config_server_set(int id, string host, int port, int format_id)
 static PHP_FUNCTION(btp_config_server_set)
 {
   char *host;
   char *port;
   long server_id;
   int host_len, port_len;
+  long format_id = BTP_FORMAT_V1;
   server_id = 0;
   host_len = 0;
   port_len = 0;
 
-  if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "lss", &server_id, &host, &host_len, &port, &port_len) != SUCCESS) {
+  if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "lss|l", &server_id, &host, &host_len, &port, &port_len, &format_id) != SUCCESS) {
     RETURN_FALSE;
   }
 
@@ -1125,10 +1159,18 @@ static PHP_FUNCTION(btp_config_server_set)
     RETURN_FALSE;
   }
 
+  if (format_id > BTP_FORMAT_VMAX || format_id < BTP_FORMAT_VMIN)
+  {
+    php_error_docref(NULL TSRMLS_CC, E_WARNING, "btp format_id is not valid, default is used! (%ld)", format_id);
+    format_id = BTP_FORMAT_V1;
+  }
+
   btp_server_t server;
   memset(&server, 0, sizeof(server));
 
   server.id = server_id;
+  server.format_id = format_id;
+
   memcpy(server.host, host, host_len);
   server.host[host_len] = '\0';
 
@@ -1509,7 +1551,14 @@ static PHP_FUNCTION( btp_timer_count_script ) {
 
   RETURN_TRUE;
 }
+
 //--------------------------------PHP API-------------------------------------------
+
+static void btp_register_constants(INIT_FUNC_ARGS)
+{
+  REGISTER_LONG_CONSTANT("BTP_FORMAT_V1", BTP_FORMAT_V1, BTP_CONSTANT_FLAGS);
+  REGISTER_LONG_CONSTANT("BTP_FORMAT_V2", BTP_FORMAT_V2, BTP_CONSTANT_FLAGS);
+}
 
 zend_function_entry btp_functions[] = {
   PHP_FE(btp_config_server_set, NULL)
@@ -1560,7 +1609,7 @@ PHP_INI_END()
 
 static void php_btp_init_globals(zend_btp_globals *globals)
 {
-  memset(globals, 0, sizeof(*globals));
+  memset(globals, '\0', sizeof(zend_btp_globals));
 }
 
 static PHP_MINIT_FUNCTION(btp)
@@ -1568,11 +1617,14 @@ static PHP_MINIT_FUNCTION(btp)
   ZEND_INIT_MODULE_GLOBALS(btp, php_btp_init_globals, NULL);
   REGISTER_INI_ENTRIES();
 
+  btp_register_constants(INIT_FUNC_ARGS_PASSTHRU);
+
   BTP_G(fpm_enable) = INI_BOOL("btp.fpm_enable");
   BTP_G(cli_enable) = INI_BOOL("btp.cli_enable");
   BTP_G(autoflush_time) = INI_INT("btp.autoflush_time");
   BTP_G(autoflush_count) = INI_INT("btp.autoflush_count");
   BTP_G(send_timer_start) = time(0);
+  BTP_G(script_name) = 0;
 
   le_btp_timer = zend_register_list_destructors_ex(btp_timer_resource_dtor, NULL, BTP_RESOURCE_NAME, module_number);
   BTP_G(is_cli) = 0;
@@ -1638,6 +1690,7 @@ static PHP_RINIT_FUNCTION(btp)
   }
   request_data->hostgroup[index_dst] = '\0';
 
+  BTP_G(script_name) = 0;
   BTP_G(in_rshutdown) = 0;
 
   return SUCCESS;

@@ -1,3 +1,33 @@
+#netbeans project
+nbproject
+
+#phpize output
+Makefile.*
+acinclude.m4
+aclocal.m4
+autom4te.cache
+build
+config.guess
+config.h.in
+config.sub
+config.log
+config.nice
+config.status
+configure
+configure.in
+install-sh
+ltmain.sh
+missing
+mkinstalldirs
+libtool
+run-tests.php
+
+#extension build ignore
+.deps
+.libs
+*.lo
+*.la
+
 # Object files
 *.o
 
